@@ -8,46 +8,46 @@ ASAAS_TOKEN = os.getenv("ASAAS_TOKEN")
 ASAAS_URL = "https://api.asaas.com/v3"
 
 
-# 🔎 Buscar cobranças em atraso
+@app.route("/")
+def home():
+    return {"status": "API rodando 🚀"}
+
+
 @app.route("/buscar-cobrancas", methods=["GET"])
 def buscar_cobrancas():
-    try:
-        customer_id = request.args.get("customer")
+    customer_id = request.args.get("customer")
 
-        if not customer_id:
-            return jsonify({"erro": "customer obrigatório"}), 400
+    if not customer_id:
+        return jsonify({"erro": "customer obrigatório"}), 400
 
-        headers = {
-            "access_token": ASAAS_TOKEN
-        }
+    headers = {
+        "access_token": ASAAS_TOKEN
+    }
 
-        params = {
-            "customer": customer_id,
-            "status": "OVERDUE"  # pode usar PENDING também
-        }
+    params = {
+        "customer": customer_id,
+        "status": "OVERDUE"
+    }
 
-        response = requests.get(
-            f"{ASAAS_URL}/payments",
-            headers=headers,
-            params=params
-        )
+    response = requests.get(
+        f"{ASAAS_URL}/payments",
+        headers=headers,
+        params=params
+    )
 
-        data = response.json()
+    data = response.json()
 
-        cobrancas = []
+    cobrancas = []
 
-        for c in data.get("data", []):
-            cobrancas.append({
-                "id": c.get("id"),
-                "valor": c.get("value"),
-                "vencimento": c.get("dueDate"),
-                "link_pagamento": c.get("invoiceUrl")
-            })
-
-        return jsonify({
-            "total": len(cobrancas),
-            "cobrancas": cobrancas
+    for c in data.get("data", []):
+        cobrancas.append({
+            "id": c.get("id"),
+            "valor": c.get("value"),
+            "vencimento": c.get("dueDate"),
+            "link_pagamento": c.get("invoiceUrl")
         })
 
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+    return jsonify({
+        "total": len(cobrancas),
+        "cobrancas": cobrancas
+    })
