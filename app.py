@@ -5,7 +5,7 @@ import json
 
 app = Flask(__name__)
 
-# 🔥 FORÇA UTF-8 (acentos corretos)
+# 🔥 UTF-8 (acentos corretos)
 app.config['JSON_AS_ASCII'] = False
 
 # 🔐 CONFIG
@@ -28,25 +28,18 @@ def buscar_cliente():
         if not cpf:
             return jsonify({"erro": "cpf obrigatório"}), 400
 
-        headers = {
-            "access_token": ASAAS_TOKEN
-        }
-
-        params = {
-            "cpfCnpj": cpf
-        }
+        headers = {"access_token": ASAAS_TOKEN}
 
         response = requests.get(
             f"{ASAAS_URL}/customers",
             headers=headers,
-            params=params
+            params={"cpfCnpj": cpf}
         )
 
         data = response.json()
 
         if data.get("data"):
             cliente = data["data"][0]
-
             return jsonify({
                 "id": cliente.get("id"),
                 "nome": cliente.get("name")
@@ -67,18 +60,12 @@ def buscar_cobrancas():
         if not customer_id:
             return jsonify({"erro": "customer obrigatório"}), 400
 
-        headers = {
-            "access_token": ASAAS_TOKEN
-        }
-
-        params = {
-            "customer": customer_id
-        }
+        headers = {"access_token": ASAAS_TOKEN}
 
         response = requests.get(
             f"{ASAAS_URL}/payments",
             headers=headers,
-            params=params
+            params={"customer": customer_id}
         )
 
         data = response.json()
@@ -102,7 +89,7 @@ def buscar_cobrancas():
         return jsonify({"erro": str(e)}), 500
 
 
-# 📄 GERAR TEXTO DE COBRANÇA (COM ACENTO CORRETO)
+# 📄 GERAR MENSAGEM FORMATADA (PADRÃO BR)
 @app.route("/gerar-mensagem", methods=["GET"])
 def gerar_mensagem():
     try:
@@ -111,11 +98,9 @@ def gerar_mensagem():
         if not cpf:
             return jsonify({"erro": "cpf obrigatório"}), 400
 
-        headers = {
-            "access_token": ASAAS_TOKEN
-        }
+        headers = {"access_token": ASAAS_TOKEN}
 
-        # 🔎 cliente
+        # 🔎 BUSCAR CLIENTE
         cliente_resp = requests.get(
             f"{ASAAS_URL}/customers",
             headers=headers,
@@ -129,7 +114,7 @@ def gerar_mensagem():
         customer_id = cliente.get("id")
         nome = cliente.get("name")
 
-        # 💰 cobranças
+        # 💰 BUSCAR COBRANÇAS
         cobrancas_resp = requests.get(
             f"{ASAAS_URL}/payments",
             headers=headers,
@@ -141,21 +126,30 @@ def gerar_mensagem():
         else:
             c = cobrancas_resp["data"][0]
 
-            valor = c.get("value")
+            # 💰 FORMATAR VALOR BR
+            valor = c.get("value", 0)
+            valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+            # 📅 FORMATAR DATA BR
             vencimento = c.get("dueDate")
+            ano, mes, dia = vencimento.split("-")
+            data_formatada = f"{dia}/{mes}/{ano}"
+
             link = c.get("invoiceUrl")
 
             mensagem = f"""Olá {nome},
 
 Identificamos uma cobrança em aberto:
 
-Valor: R${valor}
-Vencimento: {vencimento}
+Valor: R$ {valor_formatado}
+Vencimento: {data_formatada}
 
 Acesse o link para pagamento:
-{link}"""
+{link}
 
-        # 🔥 GARANTE UTF-8 100%
+Caso o pagamento já tenha sido realizado, desconsidere esta mensagem."""
+
+        # 🔥 GARANTE UTF-8
         return Response(
             json.dumps({"mensagem": mensagem}, ensure_ascii=False),
             content_type="application/json; charset=utf-8"
@@ -184,6 +178,5 @@ def webhook_asaas():
         return jsonify({"erro": str(e)}), 500
 
 
-# 🚀 START LOCAL
 if __name__ == "__main__":
     app.run()
