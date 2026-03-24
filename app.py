@@ -1,9 +1,12 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 import os
 import requests
+import json
 
-# 🔥 IMPORTANTE: app primeiro!
 app = Flask(__name__)
+
+# 🔥 FORÇA UTF-8 (acentos corretos)
+app.config['JSON_AS_ASCII'] = False
 
 # 🔐 CONFIG
 ASAAS_TOKEN = os.getenv("ASAAS_TOKEN")
@@ -13,7 +16,7 @@ ASAAS_URL = "https://api.asaas.com/v3"
 # 🟢 TESTE API
 @app.route("/")
 def home():
-    return {"status": "API rodando 🚀"}
+    return jsonify({"status": "API rodando"})
 
 
 # 🔎 BUSCAR CLIENTE POR CPF
@@ -70,8 +73,6 @@ def buscar_cobrancas():
 
         params = {
             "customer": customer_id
-            # pode adicionar:
-            # "status": "OVERDUE"
         }
 
         response = requests.get(
@@ -101,14 +102,14 @@ def buscar_cobrancas():
         return jsonify({"erro": str(e)}), 500
 
 
-# 🤖 GERAR MENSAGEM AUTOMÁTICA
+# 📄 GERAR TEXTO DE COBRANÇA (COM ACENTO CORRETO)
 @app.route("/gerar-mensagem", methods=["GET"])
 def gerar_mensagem():
     try:
         cpf = request.args.get("cpf")
 
         if not cpf:
-            return {"erro": "cpf obrigatório"}, 400
+            return jsonify({"erro": "cpf obrigatório"}), 400
 
         headers = {
             "access_token": ASAAS_TOKEN
@@ -122,7 +123,7 @@ def gerar_mensagem():
         ).json()
 
         if not cliente_resp.get("data"):
-            return {"mensagem": "Cliente não encontrado 😕"}
+            return jsonify({"mensagem": "Cliente não encontrado"})
 
         cliente = cliente_resp["data"][0]
         customer_id = cliente.get("id")
@@ -136,34 +137,32 @@ def gerar_mensagem():
         ).json()
 
         if not cobrancas_resp.get("data"):
-            return {
-                "mensagem": f"Lara - Aptrack 🤖💚\n\nOlá {nome}, não encontramos débitos em aberto ✅"
-            }
+            mensagem = f"Olá {nome}, não há débitos em aberto."
+        else:
+            c = cobrancas_resp["data"][0]
 
-        c = cobrancas_resp["data"][0]
+            valor = c.get("value")
+            vencimento = c.get("dueDate")
+            link = c.get("invoiceUrl")
 
-        valor = c.get("value")
-        vencimento = c.get("dueDate")
-        link = c.get("invoiceUrl")
-
-        mensagem = f"""Lara - Aptrack 🤖💚
-
-Olá {nome} 😊
+            mensagem = f"""Olá {nome},
 
 Identificamos uma cobrança em aberto:
 
-💰 Valor: R${valor}
-📅 Vencimento: {vencimento}
+Valor: R${valor}
+Vencimento: {vencimento}
 
-👉 Pague agora:
-{link}
+Acesse o link para pagamento:
+{link}"""
 
-Se precisar de ajuda, é só me chamar 💬"""
-
-        return {"mensagem": mensagem}
+        # 🔥 GARANTE UTF-8 100%
+        return Response(
+            json.dumps({"mensagem": mensagem}, ensure_ascii=False),
+            content_type="application/json; charset=utf-8"
+        )
 
     except Exception as e:
-        return {"erro": str(e)}, 500
+        return jsonify({"erro": str(e)}), 500
 
 
 # 🔔 WEBHOOK ASAAS
