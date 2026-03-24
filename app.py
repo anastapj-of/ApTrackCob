@@ -1,3 +1,26 @@
+from flask import Flask, request, jsonify, Response
+import os
+import requests
+import json
+
+# 🔥 INICIALIZA APP (OBRIGATÓRIO)
+app = Flask(__name__)
+
+# UTF-8
+app.config['JSON_AS_ASCII'] = False
+
+# CONFIG
+ASAAS_TOKEN = os.getenv("ASAAS_TOKEN")
+ASAAS_URL = "https://api.asaas.com/v3"
+
+
+# TESTE
+@app.route("/")
+def home():
+    return jsonify({"status": "API rodando"})
+
+
+# 🔎 GERAR MENSAGEM (TODAS AS COBRANÇAS)
 @app.route("/gerar-mensagem", methods=["GET"])
 def gerar_mensagem():
     try:
@@ -6,9 +29,11 @@ def gerar_mensagem():
         if not cpf:
             return jsonify({"erro": "cpf obrigatório"}), 400
 
-        headers = {"access_token": ASAAS_TOKEN}
+        headers = {
+            "access_token": ASAAS_TOKEN
+        }
 
-        # 🔎 CLIENTE
+        # 🔎 BUSCAR CLIENTE
         cliente_resp = requests.get(
             f"{ASAAS_URL}/customers",
             headers=headers,
@@ -22,7 +47,7 @@ def gerar_mensagem():
         customer_id = cliente.get("id")
         nome = cliente.get("name")
 
-        # 💰 COBRANÇAS
+        # 💰 BUSCAR COBRANÇAS
         cobrancas_resp = requests.get(
             f"{ASAAS_URL}/payments",
             headers=headers,
@@ -35,11 +60,15 @@ def gerar_mensagem():
             mensagem = f"Olá {nome}, não há débitos em aberto."
         else:
             # 🔥 ORDENA POR DATA (mais próxima primeiro)
-            cobrancas_ordenadas = sorted(cobrancas, key=lambda x: x.get("dueDate"))
+            cobrancas_ordenadas = sorted(
+                cobrancas,
+                key=lambda x: x.get("dueDate")
+            )
 
             mensagem = f"Olá {nome},\n\nIdentificamos {len(cobrancas_ordenadas)} cobrança(s) em aberto:\n"
 
             for i, c in enumerate(cobrancas_ordenadas, start=1):
+
                 # 💰 VALOR
                 valor = c.get("value", 0)
                 valor_formatado = f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
@@ -66,3 +95,26 @@ Link: {link}
 
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
+
+
+# 🔔 WEBHOOK ASAAS
+@app.route("/webhook/asaas", methods=["POST"])
+def webhook_asaas():
+    try:
+        token_recebido = request.headers.get("asaas-access-token")
+
+        if ASAAS_TOKEN and token_recebido != ASAAS_TOKEN:
+            return jsonify({"erro": "não autorizado"}), 403
+
+        data = request.json
+        print("Evento recebido:", data)
+
+        return jsonify({"ok": True}), 200
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
+
+
+# START LOCAL
+if __name__ == "__main__":
+    app.run()
