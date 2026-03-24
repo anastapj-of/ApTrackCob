@@ -3,7 +3,7 @@ import os
 import requests
 import json
 
-# 🔥 INICIALIZA APP (OBRIGATÓRIO)
+# 🔥 INICIALIZA APP
 app = Flask(__name__)
 
 # UTF-8
@@ -20,7 +20,7 @@ def home():
     return jsonify({"status": "API rodando"})
 
 
-# 🔎 GERAR MENSAGEM (TODAS AS COBRANÇAS)
+# 🔎 GERAR MENSAGEM (MULTIPLAS COBRANÇAS + ESTÁVEL)
 @app.route("/gerar-mensagem", methods=["GET"])
 def gerar_mensagem():
     try:
@@ -29,15 +29,14 @@ def gerar_mensagem():
         if not cpf:
             return jsonify({"erro": "cpf obrigatório"}), 400
 
-        headers = {
-            "access_token": ASAAS_TOKEN
-        }
+        headers = {"access_token": ASAAS_TOKEN}
 
-        # 🔎 BUSCAR CLIENTE
+        # 🔎 BUSCAR CLIENTE (COM TIMEOUT)
         cliente_resp = requests.get(
             f"{ASAAS_URL}/customers",
             headers=headers,
-            params={"cpfCnpj": cpf}
+            params={"cpfCnpj": cpf},
+            timeout=10
         ).json()
 
         if not cliente_resp.get("data"):
@@ -47,11 +46,12 @@ def gerar_mensagem():
         customer_id = cliente.get("id")
         nome = cliente.get("name")
 
-        # 💰 BUSCAR COBRANÇAS
+        # 💰 BUSCAR COBRANÇAS (COM TIMEOUT)
         cobrancas_resp = requests.get(
             f"{ASAAS_URL}/payments",
             headers=headers,
-            params={"customer": customer_id}
+            params={"customer": customer_id},
+            timeout=10
         ).json()
 
         cobrancas = cobrancas_resp.get("data", [])
@@ -59,10 +59,18 @@ def gerar_mensagem():
         if not cobrancas:
             mensagem = f"Olá {nome}, não há débitos em aberto."
         else:
+            # 🔥 FILTRA COBRANÇAS COM DATA VÁLIDA
+            cobrancas_validas = [
+                c for c in cobrancas if c.get("dueDate")
+            ]
+
+            if not cobrancas_validas:
+                return jsonify({"mensagem": "Nenhuma cobrança válida encontrada."})
+
             # 🔥 ORDENA POR DATA (mais próxima primeiro)
             cobrancas_ordenadas = sorted(
-                cobrancas,
-                key=lambda x: x.get("dueDate")
+                cobrancas_validas,
+                key=lambda x: x["dueDate"]
             )
 
             mensagem = f"Olá {nome},\n\nIdentificamos {len(cobrancas_ordenadas)} cobrança(s) em aberto:\n"
@@ -92,6 +100,9 @@ Link: {link}
             json.dumps({"mensagem": mensagem}, ensure_ascii=False),
             content_type="application/json; charset=utf-8"
         )
+
+    except requests.exceptions.Timeout:
+        return jsonify({"erro": "Tempo de resposta excedido (timeout)"}), 504
 
     except Exception as e:
         return jsonify({"erro": str(e)}), 500
