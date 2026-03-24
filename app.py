@@ -4,53 +4,50 @@ import requests
 
 app = Flask(__name__)
 
-# 🔐 Token do Asaas (configurar no Render depois)
 ASAAS_TOKEN = os.getenv("ASAAS_TOKEN")
-
-# 🔗 Webhook do Umbler Talk (se quiser usar depois)
-UMBLER_WEBHOOK = os.getenv("UMBLER_WEBHOOK")
+ASAAS_URL = "https://api.asaas.com/v3"
 
 
-@app.route("/")
-def home():
-    return {"status": "API rodando 🚀"}
-
-
-@app.route("/webhook/asaas", methods=["POST"])
-def webhook_asaas():
+# 🔎 Buscar cobranças em atraso
+@app.route("/buscar-cobrancas", methods=["GET"])
+def buscar_cobrancas():
     try:
-        # 🔐 Validação de segurança
-        token_recebido = request.headers.get("asaas-access-token")
-        if ASAAS_TOKEN and token_recebido != ASAAS_TOKEN:
-            return jsonify({"erro": "não autorizado"}), 403
+        customer_id = request.args.get("customer")
 
-        data = request.json
+        if not customer_id:
+            return jsonify({"erro": "customer obrigatório"}), 400
 
-        evento = data.get("event")
-        pagamento = data.get("payment", {})
+        headers = {
+            "access_token": ASAAS_TOKEN
+        }
 
-        valor = pagamento.get("value")
-        cliente = pagamento.get("customer")
+        params = {
+            "customer": customer_id,
+            "status": "OVERDUE"  # pode usar PENDING também
+        }
 
-        print("Evento recebido:", evento)
-        print("Valor:", valor)
-        print("Cliente:", cliente)
+        response = requests.get(
+            f"{ASAAS_URL}/payments",
+            headers=headers,
+            params=params
+        )
 
-        # 🤖 Exemplo de envio para Umbler (opcional)
-        if UMBLER_WEBHOOK:
-            mensagem = f"💰 Evento: {evento}\nValor: R${valor}"
+        data = response.json()
 
-            requests.post(UMBLER_WEBHOOK, json={
-                "text": mensagem,
-                "customer": cliente
+        cobrancas = []
+
+        for c in data.get("data", []):
+            cobrancas.append({
+                "id": c.get("id"),
+                "valor": c.get("value"),
+                "vencimento": c.get("dueDate"),
+                "link_pagamento": c.get("invoiceUrl")
             })
 
-        return jsonify({"ok": True}), 200
+        return jsonify({
+            "total": len(cobrancas),
+            "cobrancas": cobrancas
+        })
 
     except Exception as e:
-        print("Erro:", str(e))
         return jsonify({"erro": str(e)}), 500
-
-
-if __name__ == "__main__":
-    app.run()
