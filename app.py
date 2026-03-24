@@ -1,128 +1,62 @@
-from flask import Flask, request, jsonify
-import os
-import requests
-
-app = Flask(__name__)
-
-# 🔐 CONFIG
-ASAAS_TOKEN = os.getenv("ASAAS_TOKEN")
-ASAAS_URL = "https://api.asaas.com/v3"
-
-
-# 🟢 TESTE API
-@app.route("/")
-def home():
-    return {"status": "API rodando 🚀"}
-
-
-# 🔎 BUSCAR CLIENTE POR CPF
-@app.route("/buscar-cliente", methods=["GET"])
-def buscar_cliente():
+@app.route("/gerar-mensagem", methods=["GET"])
+def gerar_mensagem():
     try:
         cpf = request.args.get("cpf")
 
         if not cpf:
-            return jsonify({"erro": "cpf obrigatório"}), 400
+            return {"erro": "cpf obrigatório"}, 400
 
         headers = {
             "access_token": ASAAS_TOKEN
         }
 
-        params = {
-            "cpfCnpj": cpf
-        }
-
-        response = requests.get(
+        # 🔎 Busca cliente
+        cliente_resp = requests.get(
             f"{ASAAS_URL}/customers",
             headers=headers,
-            params=params
-        )
+            params={"cpfCnpj": cpf}
+        ).json()
 
-        data = response.json()
+        if not cliente_resp.get("data"):
+            return {"mensagem": "Cliente não encontrado 😕"}
 
-        if data.get("data"):
-            cliente = data["data"][0]
+        cliente = cliente_resp["data"][0]
+        customer_id = cliente.get("id")
+        nome = cliente.get("name")
 
-            return jsonify({
-                "id": cliente.get("id"),
-                "nome": cliente.get("name")
-            })
-
-        return jsonify({"erro": "cliente não encontrado"}), 404
-
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
-
-
-# 💰 BUSCAR COBRANÇAS EM ATRASO
-@app.route("/buscar-cobrancas", methods=["GET"])
-def buscar_cobrancas():
-    try:
-        customer_id = request.args.get("customer")
-
-        if not customer_id:
-            return jsonify({"erro": "customer obrigatório"}), 400
-
-        headers = {
-            "access_token": ASAAS_TOKEN
-        }
-
-        params = {
-            "customer": customer_id,
-            "status": "OVERDUE"
-        }
-
-        response = requests.get(
+        # 💰 Busca cobranças
+        cobrancas_resp = requests.get(
             f"{ASAAS_URL}/payments",
             headers=headers,
-            params=params
-        )
+            params={"customer": customer_id}
+        ).json()
 
-        data = response.json()
+        if not cobrancas_resp.get("data"):
+            return {
+                "mensagem": f"Lara - Aptrack 🤖💚\n\nOlá {nome}, não encontramos débitos em aberto ✅"
+            }
 
-        cobrancas = []
+        c = cobrancas_resp["data"][0]
 
-        for c in data.get("data", []):
-            cobrancas.append({
-                "id": c.get("id"),
-                "valor": c.get("value"),
-                "vencimento": c.get("dueDate"),
-                "link_pagamento": c.get("invoiceUrl")
-            })
+        valor = c.get("value")
+        vencimento = c.get("dueDate")
+        link = c.get("invoiceUrl")
 
-        return jsonify({
-            "total": len(cobrancas),
-            "cobrancas": cobrancas
-        })
+        mensagem = f"""Lara - Aptrack 🤖💚
 
-    except Exception as e:
-        return jsonify({"erro": str(e)}), 500
+Olá {nome} 😊
 
+Identificamos uma cobrança em aberto:
 
-# 🔔 WEBHOOK ASAAS (opcional)
-@app.route("/webhook/asaas", methods=["POST"])
-def webhook_asaas():
-    try:
-        token_recebido = request.headers.get("asaas-access-token")
+💰 Valor: R${valor}
+📅 Vencimento: {vencimento}
 
-        # 🔐 validação
-        if ASAAS_TOKEN and token_recebido != ASAAS_TOKEN:
-            return jsonify({"erro": "não autorizado"}), 403
+👉 Pague agora:
+{link}
 
-        data = request.json
+Se precisar de ajuda, é só me chamar 💬"""
 
-        evento = data.get("event")
-        pagamento = data.get("payment", {})
-
-        print("Evento:", evento)
-        print("Pagamento:", pagamento)
-
-        return jsonify({"ok": True}), 200
+        return {"mensagem": mensagem}
 
     except Exception as e:
-        return jsonify({"erro": str(e)}), 500
-
-
-# 🚀 START LOCAL
-if __name__ == "__main__":
-    app.run()
+        return {"erro": str(e)}, 500
